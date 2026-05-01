@@ -1,2 +1,6 @@
 .env
 credentials.json
+state/
+data/
+.venv/
+__pycache__/
