@@ -4,3 +4,5 @@ state/
 data/
 .venv/
 __pycache__/
+token.json
+test/
