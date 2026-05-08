@@ -5,6 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "powerlifting_pipeline"
 version = "0.1.0"
+description = "Powerlifting ELT Lakehouse"
+# Add this block to track your project's requirements!
+dependencies = [
+    "requests",
+    "psycopg2-binary"
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
