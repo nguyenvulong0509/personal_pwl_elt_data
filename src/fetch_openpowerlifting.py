@@ -1,82 +1,83 @@
 import os
 import requests
 import zipfile
-import csv
-from io import BytesIO
-from google.cloud import bigquery
-from dotenv import load_dotenv
+from src.utils.state_tracker import should_process_file, log_file_state
 
-# The official bulk data URL often redirects or updates, but the project
-# maintains their static data dumps at data.openpowerlifting.org
 DATA_URL = "https://openpowerlifting.gitlab.io/opl-csv/files/openpowerlifting-latest.zip"
-EXTRACT_DIR = "data/bronze/openpowerlifting"
+STAGING_DIR = "data/staging"
+FILE_ID = "openpwl_master_db"
 
-def download_openpowerlifting_data(url: str, extract_to: str):
-    """Downloads and extracts the latest OpenPowerlifting dataset."""
-    print(f"Downloading dataset from {url}...")
-    response = requests.get(url)
-    response.raise_for_status()  # Check for download errors
-
-    print("Download complete. Extracting files...")
-    with zipfile.ZipFile(BytesIO(response.content)) as zip_ref:
-        zip_ref.extractall(extract_to)
+def fetch_openpowerlifting():
+    print("Pinging OpenPowerlifting servers...")
+    
+    # 1. The HEAD Request: Get the metadata without downloading the whole file
+    try:
+        head_response = requests.head(DATA_URL, allow_redirects=True)
+        head_response.raise_for_status()
         
-        # The zip typically extracts into a subfolder named with a date hash
-        # Let's find the exact path to the CSV file
-        for root, dirs, files in os.walk(extract_to):
-            for file in files:
-                if file.endswith('.csv'):
-                    csv_path = os.path.join(root, file)
-                    print(f"Dataset extracted successfully to: {csv_path}")
-                    return csv_path
+        # We use their Last-Modified server timestamp as our hash
+        # If it's missing for some reason, we fallback to the ETag
+        server_hash = head_response.headers.get('Last-Modified') or head_response.headers.get('ETag')
+        
+        if not server_hash:
+            raise ValueError("Server didn't return a Last-Modified or ETag header.")
+            
+    except Exception as e:
+        print(f"Failed to ping server: {e}")
+        return
+
+    # 2. Check Postgres
+    print(f"latest version's from: {server_hash}")
+    if not should_process_file(FILE_ID, server_hash):
+        print("Skipping. We already have this exact dataset in the Lakehouse.")
+        return
+
+    # 3. We have new data! Let's log PENDING and start the heavy lifting
+    print("New data found! Starting download...")
+    log_file_state(FILE_ID, "openpowerlifting-latest.zip", "openpowerlifting", server_hash, "PENDING")
+    
+    os.makedirs(STAGING_DIR, exist_ok=True)
+    temp_zip_path = os.path.join(STAGING_DIR, "temp_opl.zip")
+
+    try:
+        # Download the giant zip in chunks so we don't blow up our RAM
+        with requests.get(DATA_URL, stream=True) as r:
+            r.raise_for_status()
+            with open(temp_zip_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
                     
-    raise FileNotFoundError("Could not find a CSV file in the extracted archive.")
+        print("Download complete. Extracting CSV...")
+        
+        # Extract only the CSV file directly into our staging folder
+        extracted_csv_path = None
+        with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+            for file_info in zip_ref.infolist():
+                if file_info.filename.endswith('.csv'):
+                    # The zip contains a folder with the CSV inside. We just want the CSV.
+                    file_info.filename = "openpowerlifting.csv" 
+                    zip_ref.extract(file_info, STAGING_DIR)
+                    extracted_csv_path = os.path.join(STAGING_DIR, "openpowerlifting.csv")
+                    break
+        
+        if not extracted_csv_path:
+            raise FileNotFoundError("Could not find a CSV file inside the downloaded ZIP.")
 
-def load_to_bigquery(csv_file_path: str, project_id: str, dataset_id: str, table_name: str):
-    """Loads the CSV data into Google BigQuery."""
-    print(f"Loading {csv_file_path} into BigQuery ({project_id}.{dataset_id}.{table_name})...")
-    client = bigquery.Client(project=project_id)
-    # The client is initialized with the project, so we only need to provide
-    # "dataset_id.table_name". This prevents duplicating the project ID if it's
-    # already part of the dataset_id environment variable.
-    table_id = f"{dataset_id}.{table_name}"
+        # Clean up the giant temp zip file to save hard drive space
+        os.remove(temp_zip_path)
+        
+        # Log SUCCESS
+        log_file_state(FILE_ID, "openpowerlifting.csv", "openpowerlifting", server_hash, "SUCCESS")
+        print(f" -> Successfully safely landed data at {extracted_csv_path}")
 
-    # Read the header to dynamically generate a STRING schema for all columns.
-    # This prevents BigQuery autodetect from failing on type mismatches (e.g. floats in integer columns).
-    with open(csv_file_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        header = next(reader)
-    schema = [bigquery.SchemaField(col_name, "STRING") for col_name in header]
-
-    job_config = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.CSV,
-        skip_leading_rows=1,
-        schema=schema,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
-    )
-
-    with open(csv_file_path, "rb") as source_file:
-        job = client.load_table_from_file(source_file, table_id, job_config=job_config)
-
-    job.result()  # Waits for the job to complete
-
-    destination_table = client.get_table(table_id)
-    print(f"Successfully loaded {destination_table.num_rows} rows into the '{table_name}' table in BigQuery.")
+    except Exception as e:
+        # If any error/failure happens, log the crash
+        log_file_state(FILE_ID, "openpowerlifting-latest.zip", "openpowerlifting", server_hash, "FAILED", error_log=str(e))
+        print(f"FAILED to process data: {e}")
+        
+        # Clean up the broken zip file if it exists
+        if os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
 
 if __name__ == "__main__":
-    load_dotenv()
-    
-    PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-    DATASET_ID = os.getenv("BQ_RAW_DATASET_ID")
-    TABLE_NAME = "raw_openpowerlifting"
-
-    if not PROJECT_ID or not DATASET_ID:
-        raise ValueError("Please set GCP_PROJECT_ID and BQ_RAW_DATASET_ID in your environment variables or .env file.")
-
-    os.makedirs(EXTRACT_DIR, exist_ok=True)
-    
-    try:
-        csv_path = download_openpowerlifting_data(DATA_URL, EXTRACT_DIR)
-        load_to_bigquery(csv_path, PROJECT_ID, DATASET_ID, TABLE_NAME)
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to download the data. Error: {e}")
+    fetch_openpowerlifting()
