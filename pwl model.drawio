@@ -1,6 +1,6 @@
-<mxfile host="app.diagrams.net">
-  <diagram name="Page-1" id="2xfsCbRdGL5mCVi39org">
-    <mxGraphModel dx="1414" dy="743" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="5000" pageHeight="5000" math="0" shadow="0">
+<mxfile host="app.diagrams.net" pages="2">
+  <diagram name="Data model/schema" id="2xfsCbRdGL5mCVi39org">
+    <mxGraphModel dx="1347" dy="708" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="5000" pageHeight="5000" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -134,7 +134,7 @@
           <mxGeometry height="30" width="180" y="1260" as="geometry" />
         </mxCell>
         <mxCell id="A99E4Y8rA1lA0XztLrAB-5" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="workout_plan_original" vertex="1">
-          <mxGeometry height="600" width="140" x="450" y="150" as="geometry" />
+          <mxGeometry height="630" width="140" x="450" y="150" as="geometry" />
         </mxCell>
         <mxCell id="A99E4Y8rA1lA0XztLrAB-6" parent="A99E4Y8rA1lA0XztLrAB-5" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" value="course_label" vertex="1">
           <mxGeometry height="30" width="140" y="30" as="geometry" />
@@ -193,8 +193,22 @@
         <mxCell id="A99E4Y8rA1lA0XztLrAB-70" parent="A99E4Y8rA1lA0XztLrAB-5" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" value="source_id" vertex="1">
           <mxGeometry height="30" width="140" y="570" as="geometry" />
         </mxCell>
-        <mxCell id="A99E4Y8rA1lA0XztLrAB-55" parent="1" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;align=center;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Landing Zone&amp;nbsp;&lt;/h1&gt;&lt;div&gt;landing_zone&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Data parsed/pulled from multiple sources&lt;/div&gt;" vertex="1">
+        <mxCell id="gzOzZj5o9KlG5ATKd4Tg-1" parent="A99E4Y8rA1lA0XztLrAB-5" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" value="velocity" vertex="1">
+          <mxGeometry height="30" width="140" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="A99E4Y8rA1lA0XztLrAB-55" parent="1" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;align=center;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;staging&amp;nbsp;&lt;/h1&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Data parsed/pulled from multiple sources&lt;/div&gt;" vertex="1">
           <mxGeometry height="110" width="450" x="530" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="ZWJ_JWY_oToa2EZCLO4o" name="Infrastructure draft">
+    <mxGraphModel dx="1414" dy="5743" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="5000" pageHeight="5000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="5Gd2FwqmCgrT_cIDRX6w-1" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;The Core Tech Stack&lt;/div&gt;&lt;div&gt;Orchestrator: Apache Airflow&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Transformation Engine (&quot;The Muscle&quot;): Apache Spark (PySpark)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Storage Layer: MinIO (Local S3-compatible storage)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Table Format: Apache Iceberg&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;State Management / Metadata: PostgreSQL&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;Serving Layer (Cloud): Google BigQuery&lt;/div&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="210" y="50" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
