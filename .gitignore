@@ -2,7 +2,9 @@
 credentials.json
 state/
 data/
-.venv/
+venv/
 __pycache__/
 token.json
 test/
+logs/
+airflow.cfg

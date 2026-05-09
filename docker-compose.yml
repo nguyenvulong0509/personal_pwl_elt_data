@@ -69,7 +69,8 @@ services:
 
   # data transformation engine
   spark:
-    image: bitnami/spark:3.5
+    image: apache/spark:latest
+    user: root
     environment:
       - SPARK_MODE=master
       - SPARK_RPC_AUTHENTICATION_ENABLED=no

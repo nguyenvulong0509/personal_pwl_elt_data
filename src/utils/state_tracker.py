@@ -1,5 +1,9 @@
 import os
 import psycopg2
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 # grab db creds from the environment, fallback to the docker defaults
 DB_HOST = os.getenv("POSTGRES_HOST") # 'postgres' is the container name
