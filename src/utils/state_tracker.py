@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # grab db creds from the environment, fallback to the docker defaults
 DB_HOST = os.getenv("POSTGRES_HOST") # 'postgres' is the container name
 DB_NAME = os.getenv("POSTGRES_DB")
@@ -71,26 +70,31 @@ def should_process_file(file_id, current_hash):
     return False
 
 def log_file_state(file_id, file_name, source_system, current_hash, status, error_log=None):
-    # "upserts" the record so we know we successfully handled this version
+    """Logs or updates the processing state of a file in PostgreSQL using an Upsert."""
     conn = get_conn()
-    cur = conn.cursor()
+    cursor = conn.cursor()
     
-    cur.execute("""
-        INSERT INTO file_state_tracker (file_id, file_name, source_system, md5_hash, status, error_log, last_processed)
-        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (file_id) 
-        DO UPDATE SET 
-            file_name = EXCLUDED.file_name,
-            source_system = EXCLUDED.source_system,
-            md5_hash = EXCLUDED.md5_hash,
-            status = EXCLUDED.status,
-            error_log = EXCLUDED.error_log,
-            last_processed = CURRENT_TIMESTAMP;
-    """, (file_id, file_name, source_system, current_hash, status, error_log))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cursor.execute("""
+            INSERT INTO file_state_tracker (file_id, file_name, source_system, md5_hash, status, error_log, last_processed)
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (file_id) 
+            DO UPDATE SET 
+                file_name = EXCLUDED.file_name,
+                source_system = EXCLUDED.source_system,
+                md5_hash = EXCLUDED.md5_hash,
+                status = EXCLUDED.status,
+                error_log = EXCLUDED.error_log,
+                last_processed = CURRENT_TIMESTAMP;
+        """, (file_id, file_name, source_system, current_hash, status, error_log))
+        
+        conn.commit()
+    except Exception as e:
+        print(f"Database error while logging state: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == "__main__":
     # run this directly to set up the table initially
