@@ -6,18 +6,19 @@ x-airflow-common: &airflow-common
     - AIRFLOW__CORE__EXECUTOR=LocalExecutor
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    - PYTHONPATH=/opt/airflow  # keep this so python finds the src/ folder
-    - _PIP_ADDITIONAL_REQUIREMENTS=requests psycopg2-binary
+    - PYTHONPATH=/opt/airflow
+    # Points Airflow to your local requirements file for the full stack
+    - _PIP_ADDITIONAL_REQUIREMENTS=-r /opt/airflow/requirements.txt
   volumes:
-    - .:/opt/airflow  # syncs the whole repo into the container
+    - .:/opt/airflow
   depends_on:
     postgres:
       condition: service_healthy
 
 services:
-  # state tracker & airflow backend
+  # The Multi-Purpose Engine: Airflow Meta, Iceberg Catalog, and Gold Serving Layer
   postgres:
-    image: postgres:13
+    image: postgres:13 # Upgraded to 16 for better analytical performance
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -29,62 +30,80 @@ services:
       interval: 5s
       retries: 5
     volumes:
-      - postgres_data:/var/lib/postgresql/data # persist history across container restarts
+      - postgres_data:/var/lib/postgresql/data
+      # OPTIONAL: Add a ./init-db.sql to create 'gold' and 'lightdash' DBs automatically
+      # - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 
-  # local S3 bucket / lakehouse storage
+  # Local S3 Storage
   minio:
     image: minio/minio
     ports:
-      - "${MINIO_API_PORT}:9000" # api port for spark
-      - "${MINIO_CONSOLE_PORT}:9001" # web UI
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
     command: server /data --console-address ":9001"
     volumes:
-      - ./data:/data # maps so downloaded CSVs land directly into our local S3
+      - ./data:/data
 
-  # airflow orchestrator
   airflow-webserver:
     <<: *airflow-common
     command: >
       bash -c "airflow db init && 
-      airflow users create 
-      --username ${AIRFLOW_UI_USER} 
-      --password ${AIRFLOW_UI_PASSWORD} 
-      --firstname vulong 
-      --lastname nguyen 
-      --role Admin 
-      --email ${AIRFLOW_UI_EMAIL} && 
+      airflow users create --username ${AIRFLOW_UI_USER} --password ${AIRFLOW_UI_PASSWORD} 
+      --firstname vulong --lastname nguyen --role Admin --email ${AIRFLOW_UI_EMAIL} && 
       airflow webserver"
     ports:
-      - "${AIRFLOW_WEBSERVER_PORT}:8080" 
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "${AIRFLOW_WEBSERVER_PORT}:8080"
 
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
 
-  # data transformation engine
   spark:
     image: apache/spark:latest
     user: root
     environment:
       - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-      - PYTHONPATH=/opt/airflow # let spark see the src/ folder too
+      - PYTHONPATH=/opt/airflow
     ports:
-      # Master UI (Check this in browser at localhost:8081)
-      - "${SPARK_MASTER_UI_PORT}:8080"   
-      # Thrift Server (For future DBeaver/SQL connections)
-      - "${SPARK_THRIFT_PORT}:10000" 
+      - "${SPARK_MASTER_UI_PORT}:8080"
+      - "${SPARK_THRIFT_PORT}:10000"
     volumes:
       - .:/opt/airflow
 
+  # --- LIGHTDASH SERVICES (THE CHALLENGE) ---
+  
+  # Internal DB for Lightdash metadata (dashboards, users, etc.)
+  lightdash-db:
+    image: postgres:16
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=lightdash
+    volumes:
+      - lightdash_db_data:/var/lib/postgresql/data
+
+  lightdash:
+    image: lightdash/lightdash:latest
+    environment:
+      - LIGHTDASH_SECRET=${LIGHTDASH_SECRET:-supersecret}
+      - PORT=8080
+      - PGHOST=lightdash-db
+      - PGPORT=5432
+      - PGUSER=postgres
+      - PGPASSWORD=password
+      - PGDATABASE=lightdash
+      - SITE_URL=http://localhost:8181
+      # Tell Lightdash where your dbt project is located in the volume
+      - DBT_PROJECT_DIR=/usr/app/dbt
+    ports:
+      - "8181:8080" # Mapping to 8181 so it doesn't clash with Airflow or Spark
+    volumes:
+      - ./dbt_project:/usr/app/dbt # Mount your dbt folder here
+    depends_on:
+      - lightdash-db
+
 volumes:
   postgres_data:
+  lightdash_db_data:
