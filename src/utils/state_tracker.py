@@ -25,75 +25,75 @@ def get_conn():
     )
 
 def init_db():
-    # makes sure the tracking table actually exists before we try to use it
+    """Initializes the tracking table with support for partitioned batch dates and folder paths."""
     conn = get_conn()
-    cur = conn.cursor()
-    
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS file_state_tracker (
-            file_id VARCHAR PRIMARY KEY,
-            file_name VARCHAR,
-            source_system VARCHAR,  -- e.g., 'gdrive_coach', 'openpowerlifting'
-            md5_hash VARCHAR,
-            status VARCHAR CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED')), 
-            error_log TEXT,         -- dump the python error here if it crashes
-            last_processed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-    
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS file_state_tracker (
+                    file_id VARCHAR PRIMARY KEY,
+                    file_name VARCHAR,
+                    folder_path VARCHAR,     -- Differentiates files with same names
+                    source_system VARCHAR,
+                    batch_date VARCHAR,     -- Tracks the partition date (YYYY-MM-DD)
+                    md5_hash VARCHAR,
+                    status VARCHAR CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED')), 
+                    error_log TEXT,
+                    last_processed TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP 
+                );
+            """)
+    finally:
+        conn.close()
 
 def should_process_file(file_id, current_hash):
-    # checks if we've seen this exact version of the file before
+    """Checks if a file needs processing based on its hash and previous status."""
     conn = get_conn()
-    cur = conn.cursor()
-    
-    cur.execute("SELECT md5_hash, status FROM file_state_tracker WHERE file_id = %s;", (file_id,))
-    result = cur.fetchone()
-    
-    cur.close()
-    conn.close()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT md5_hash, status FROM file_state_tracker WHERE file_id = %s;", (file_id,))
+                result = cur.fetchone()
+    finally:
+        conn.close()
 
-    # if it's brand new, definitely process it
     if not result:
         return True
         
     db_hash, db_status = result
-    
-    # if it previously failed, or if the coach updated the sheet, process it again
     if db_status != 'SUCCESS' or db_hash != current_hash:
         return True
         
-    # otherwise, skip it
     return False
 
-def log_file_state(file_id, file_name, source_system, current_hash, status, error_log=None):
+def log_file_state(file_id, file_name, source_system, current_hash, status, batch_date=None, folder_path=None, error_log=None):
     """Logs or updates the processing state of a file in PostgreSQL using an Upsert."""
     conn = get_conn()
-    cursor = conn.cursor()
-    
     try:
-        cursor.execute("""
-            INSERT INTO file_state_tracker (file_id, file_name, source_system, md5_hash, status, error_log, last_processed)
-            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (file_id) 
-            DO UPDATE SET 
-                file_name = EXCLUDED.file_name,
-                source_system = EXCLUDED.source_system,
-                md5_hash = EXCLUDED.md5_hash,
-                status = EXCLUDED.status,
-                error_log = EXCLUDED.error_log,
-                last_processed = CURRENT_TIMESTAMP;
-        """, (file_id, file_name, source_system, current_hash, status, error_log))
-        
-        conn.commit()
-    except Exception as e:
-        print(f"Database error while logging state: {e}")
-        conn.rollback()
+        with conn:
+            with conn.cursor() as cursor:
+                try:
+                    cursor.execute("""
+                    INSERT INTO file_state_tracker (
+                        file_id, file_name, folder_path, source_system, 
+                        batch_date, md5_hash, status, error_log, last_processed
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (file_id) 
+                    DO UPDATE SET 
+                        file_name = EXCLUDED.file_name,
+                        folder_path = EXCLUDED.folder_path,
+                        source_system = EXCLUDED.source_system,
+                        batch_date = EXCLUDED.batch_date,
+                        md5_hash = EXCLUDED.md5_hash,
+                        status = EXCLUDED.status,
+                        error_log = EXCLUDED.error_log,
+                        last_processed = CURRENT_TIMESTAMP;
+                """, (file_id, file_name, folder_path, source_system, batch_date, current_hash, status, error_log))
+                except Exception as e:
+                    print(f"Database error while logging state: {e}")
+                    conn.rollback()
     finally:
-        cursor.close()
         conn.close()
 
 if __name__ == "__main__":

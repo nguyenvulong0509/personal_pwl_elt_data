@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import boto3
 from botocore.client import Config
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import service_account
+from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -26,12 +26,13 @@ if str(root_dir) not in sys.path:
 
 # Explicitly load .env first so os.getenv works immediately below
 load_dotenv(dotenv_path=root_dir / '.env')
-from src.utils.state_tracker import should_process_file, log_file_state
+from src.utils.state_tracker import init_db, should_process_file, log_file_state
 
-SCOPES = [
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/spreadsheets.readonly'
-]
+scopes = [
+        os.getenv("GOOGLE_DRIVE_SCOPES"),
+        os.getenv("GOOGLE_SHEET_SCOPES")
+    ]
+
 
 FOLDER_ID = os.getenv("drive_folder_id")
 
@@ -73,21 +74,23 @@ def execute_with_retry(request):
 
 # 2.1 Authentication helper function
 def authenticate_gdrive():
-    # Path to the JSON key you downloaded from GCP
-    key_path = root_dir / sa = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    # 1. Get the filename from your .env
+    json_filename = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
     
-    # Define the same scopes
-    scopes = [
-        os.getenv("GOOGLE_DRIVE_SCOPES"),
-        os.getenv("GOOGLE_SHEET_SCOPES")
-    ]
-    
-    # This automatically handles the credentials without user interaction
-    creds = service_account.Credentials.from_service_account_file(
+    if not json_filename:
+        raise ValueError("Environment variable 'GOOGLE_SERVICE_ACCOUNT_FILE' is missing.")
+
+    # 2. Construct the full path
+    key_path = root_dir / json_filename
+
+    # 3. Fail-fast: Check if the file actually exists before passing to Google
+    if not key_path.exists():
+        raise FileNotFoundError(f"Service account file not found at: {key_path}")
+
+    # 4. Authenticate
+    return service_account.Credentials.from_service_account_file(
         key_path, scopes=scopes
     )
-    
-    return creds
 
 def get_all_files_in_folder_recursive(service, current_folder_id, current_path="Root"):
     all_spreadsheets = []
@@ -106,9 +109,8 @@ def get_all_files_in_folder_recursive(service, current_folder_id, current_path="
         all_spreadsheets.extend(get_all_files_in_folder_recursive(service, folder['id'], new_path))
     return all_spreadsheets
 
-# ==========================================
+
 # 3. EXTRACTION & LOADING WORKER
-# ==========================================
 def download_and_upload_to_minio(s3_client, bucket_name, sheets_service, file_id, file_name, folder_path, current_batch_date):
     sheet_metadata = execute_with_retry(sheets_service.spreadsheets().get(spreadsheetId=file_id))
     sheets = sheet_metadata.get('sheets', [])
@@ -158,12 +160,14 @@ def download_and_upload_to_minio(s3_client, bucket_name, sheets_service, file_id
             
     return True
 
-# ==========================================
+
 # 4. MAIN ORCHESTRATION PIPELINE
-# ==========================================
 def fetch_logs():
     if not FOLDER_ID:
         raise ValueError("CRITICAL ERROR: 'drive_folder_id' is missing from your .env file.")
+
+    # 0. Ensure the state tracking table exists
+    init_db()
 
     bucket_name = os.getenv("MINIO_BUCKET_NAME", "staging")
     
@@ -194,7 +198,10 @@ def fetch_logs():
         if should_process_file(file_id, modified_time):  
             print(f"\nIngesting updated file: [{folder_path}] {file_name}")
             try:
-                log_file_state(file_id, file_name, "gdrive_coach", modified_time, "PENDING")
+                log_file_state(
+                    file_id, file_name, "gdrive_coach", modified_time, "PENDING", 
+                    batch_date=current_batch_date, folder_path=folder_path
+                )
                 
                 # Pass current_batch_date down
                 download_and_upload_to_minio(
@@ -202,10 +209,16 @@ def fetch_logs():
                     file_id, file_name, folder_path, current_batch_date
                 )
                 
-                log_file_state(file_id, file_name, "gdrive_coach", modified_time, "SUCCESS")
+                log_file_state(
+                    file_id, file_name, "gdrive_coach", modified_time, "SUCCESS", 
+                    batch_date=current_batch_date, folder_path=folder_path
+                )
             except Exception as e:
                 print(f"Error: {e}")
-                log_file_state(file_id, file_name, "gdrive_coach", modified_time, "FAILED", str(e))
+                log_file_state(
+                    file_id, file_name, "gdrive_coach", modified_time, "FAILED", 
+                    batch_date=current_batch_date, folder_path=folder_path, error_log=str(e)
+                )
         else:
             print(f"Skipping: {file_name} (No new changes)")
 

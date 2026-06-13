@@ -7,8 +7,8 @@ x-airflow-common: &airflow-common
     - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
     - PYTHONPATH=/opt/airflow
-    # Points Airflow to your local requirements file for the full stack
-    - _PIP_ADDITIONAL_REQUIREMENTS=-r /opt/airflow/requirements.txt
+    # Points Airflow to the project directory to install dependencies from pyproject.toml
+    - _PIP_ADDITIONAL_REQUIREMENTS=/opt/airflow
   volumes:
     - .:/opt/airflow
   depends_on:
