@@ -1,0 +1,18 @@
+# This file prevents Gemini Code Assist from modifying critical project files.
+
+# ==========================================
+# SECRETS & CONFIGURATION
+# ==========================================
+# Ignore all environment configuration and secrets.
+.env
+*.json
+
+# ==========================================
+# INFRASTRUCTURE & DATA
+# ==========================================
+# Ignore infrastructure definitions, local data, and the instruction file.
+docker-compose.yml
+Dockerfile
+data/
+postgres_data/
+docker/GEMINI.md

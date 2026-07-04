@@ -24,8 +24,7 @@ def fetch_openpowerlifting():
     init_db()
 
     bucket_name = os.getenv("MINIO_BUCKET_NAME", "staging")
-    current_batch_date = datetime.today().strftime('%Y-%m-%d')
-    print(f"=== Initializing Ingestion Batch Window: {current_batch_date} ===")
+    print("=== Initializing OpenPowerlifting Overwrite Ingestion ===")
 
     s3_client = boto3.client(
         's3',
@@ -62,8 +61,7 @@ def fetch_openpowerlifting():
     # 3. We have new data! Let's log PENDING and start the heavy lifting
     print("New data found! Starting download...")
     log_file_state(
-        FILE_ID, "openpowerlifting-latest.zip", "openpowerlifting", server_hash, "PENDING", 
-        batch_date=current_batch_date, folder_path="External/GitLab"
+        FILE_ID, "openpowerlifting-latest.zip", "openpowerlifting", server_hash, "PENDING", folder_path="External/GitLab"
     )
     
     staging_dir = str(root_dir / "data" / "staging")
@@ -94,7 +92,8 @@ def fetch_openpowerlifting():
         if not extracted_csv_path:
             raise FileNotFoundError("Could not find a CSV file inside the downloaded ZIP.")
 
-        csv_filename = f"openpowerlifting/batch_date={current_batch_date}/openpowerlifting.csv"
+        # Use a static path for overwrite, not a partitioned one
+        csv_filename = "openpowerlifting/openpowerlifting.csv"
         
         print(f"Uploading extracted CSV to MinIO at {csv_filename}...")
         s3_client.upload_file(extracted_csv_path, bucket_name, csv_filename)
@@ -105,16 +104,14 @@ def fetch_openpowerlifting():
         
         # Log SUCCESS
         log_file_state(
-            FILE_ID, "openpowerlifting.csv", "openpowerlifting", server_hash, "SUCCESS", 
-            batch_date=current_batch_date, folder_path="External/GitLab"
+            FILE_ID, "openpowerlifting.csv", "openpowerlifting", server_hash, "SUCCESS", folder_path="External/GitLab"
         )
         print(f" -> Successfully safely landed data at s3://{bucket_name}/{csv_filename}")
 
     except Exception as e:
         # If any error/failure happens, log the crash
         log_file_state(
-            FILE_ID, "openpowerlifting-latest.zip", "openpowerlifting", server_hash, "FAILED", 
-            batch_date=current_batch_date, folder_path="External/GitLab", error_log=str(e)
+            FILE_ID, "openpowerlifting-latest.zip", "openpowerlifting", server_hash, "FAILED", folder_path="External/GitLab", error_log=str(e)
         )
         print(f"FAILED to process data: {e}")
         
